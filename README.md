@@ -1,4 +1,5 @@
 // create class with default constructor
+
 var Parent  = Class(function(){});
 
 // Register class member
