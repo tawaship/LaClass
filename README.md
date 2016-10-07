@@ -9,7 +9,7 @@ If you use LaClass, you will be able to use these easily.
 - private
 - static
 - final  
-    
+  
 @todo  
 - interface
 - implements
