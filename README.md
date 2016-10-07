@@ -5,14 +5,23 @@ var Parent  = Class(function(){});
 // Register class member
 
 Parent.member(function() {
+
   /*
+  
     usable keywords
+    
     public
+    
     protected
+    
     private
+    
     static
+    
     final
+    
    */
+   
   this.public.hoge = 1;
   this.protected.static.sHoge = 10;
   this.private.pHoge = 200;
