@@ -3,6 +3,7 @@
 var Parent  = Class(function(){});
 
 // Register class member
+
 Parent.member(function() {
   /*
     usable keywords
