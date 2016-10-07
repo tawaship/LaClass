@@ -23,6 +23,7 @@ Parent.member(function() {
    */
    
   this.public.hoge = 1;
+  
   this.protected.static.sHoge = 10;
   this.private.pHoge = 200;
   this.protected.getPHoge = function() {
