@@ -1,6 +1,6 @@
 # LaClass  
   
-@description
+@description  
 LaClass is smart class building system for EcmaScript5.  
 If you use LaClass, you will be able to use these easily.  
 - extends
