@@ -63,18 +63,6 @@
 				_namespace: {
 					value: c
 				},
-				_parent: {
-					writable: true,
-					value: null
-				},
-				_isDefineMember: {
-					writable: true,
-					value: false
-				},
-				_isInheritedOnce: {
-					writable: true,
-					value: false
-				},
 				_memberInfo: {
 					value: {}
 				},
@@ -206,6 +194,8 @@
 			
 		defaultMembers.push('constrcutor');
 		defaultMembers.push('_parent');
+		defaultMembers.push('_isDefineMember');
+		defaultMembers.push('_isInheritedOnce');
 		
 		for (var i = 0; i < defaultMembers.length; i++) {
 			obj[defaultMembers[i]] = true;
@@ -222,7 +212,11 @@
 	 * @return  {function}          Constructor of sub class
 	 */
 	function _extends(parent) {
-		var plainProto, type, p;
+		var p;
+		
+		if (this._isInheritedOnce) {
+			throw new LaClassError('Function \'extends\' must be run before create sub class.');
+		}
 		
 		if (this._isDefineMember) {
 			throw new LaClassError('Function \'extends\' must be run before function \'member\'.');
@@ -231,21 +225,28 @@
 		// If super class defined without LaClass, wrap super class.
 		if (!isLaClassObject(parent)) {
 			p = createInheritedClass(Class(), parent);
-			
-			createProperties.call(p, parent.prototype, p.prototype, parent, ACCESSIBILITY_PUBLIC, false);
-			createProperties.call(p, parent,           p,           parent, ACCESSIBILITY_PUBLIC, false);
+			createProperties.call(this, p.prototype, this.prototype, p, ACCESSIBILITY_PUBLIC, false);
+			createProperties.call(this, p,           this,           p, ACCESSIBILITY_PUBLIC, false);
 		} else {
+			// Register reference of static member of super class
 			p = parent;
+			baseProto = Object.getOwnPropertyNames(p);
+			for (var i = 0; i < baseProto.length; i++) {
+				if (baseProto[i] in SKIP_MEMBER_NAME) {
+					continue;
+				}
+				
+				info = getMemberInfo.call(p, baseProto[i]);console.log(baseProto[i])
+				createPropertyReference.call(this, baseProto[i], p, info.accessibility, info.type);
+			}
 		}
 		
 		Object.defineProperty(p, '_isInheritedOnce', {
-			writable: false,
 			value: true
 		});
 		
 		// Register constructor of super class
 		Object.defineProperty(this, '_parent', {
-			writable: false,
 			value: p
 		});
 		
@@ -293,8 +294,6 @@
 		compObj = Object.getPrototypeOf(this.prototype).constructor;
 		
 		// Register member
-		createProperties.call(this, this.prototype,              this.prototype, compObj, ACCESSIBILITY_PUBLIC,    false);    // Register class prototype as public
-		createProperties.call(this, this,                        this,           compObj, ACCESSIBILITY_PUBLIC,    false);    // Register member of class object as public static
 		createProperties.call(this, this.public,                 this.prototype, compObj, ACCESSIBILITY_PUBLIC,    false);    // Register public
 		createProperties.call(this, this.public.final,           this.prototype, compObj, ACCESSIBILITY_PUBLIC,    true);     // Register public final
 		createProperties.call(this, this.final,                  this.prototype, compObj, ACCESSIBILITY_PUBLIC,    true);     // Register final as public final
@@ -311,21 +310,7 @@
 		createProperties.call(this, this.private.static,         this,           compObj, ACCESSIBILITY_PRIVATE,   false);    // Register private static
 		createProperties.call(this, this.private.final.static,   this,           compObj, ACCESSIBILITY_PRIVATE,   true);     // Register private final static
 		
-		// Register reference of static member of super class
-		if (this._parent) {
-			baseProto = Object.getOwnPropertyNames(compObj);
-			for (var i = 0; i < baseProto.length; i++) {
-				if (baseProto[i] in SKIP_MEMBER_NAME || baseProto[i] in this._memberInfo) {
-					continue;
-				}
-				
-				info = getMemberInfo.call(compObj, baseProto[i]);
-				createPropertyReference.call(this, baseProto[i], compObj, info.accessibility, info.type);
-			}
-		}
-		
 		Object.defineProperty(this, '_isDefineMember', {
-			writable: false,
 			value: true
 		});
 		
@@ -452,6 +437,8 @@
 		Object.defineProperty(this, key, (function() {
 			if (type === VARIABLE_TYPE_FUNCTION) {
 				return {
+					enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+					configurable: true,
 					value: (function() {
 						var func = function() {
 							if (checker(arguments.callee.caller, self)) {
@@ -467,6 +454,8 @@
 				};
 			} else {
 				return {
+					enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+					configurable: true,
 					get: (function() {
 						var func = function() {
 							if (checker(arguments.callee.caller, self)) {
@@ -538,6 +527,9 @@
 			});
 			
 			return {
+				enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+				configrable: false,
+				writable: false,
 				value: function() {
 					if (checker(arguments.callee.caller, self)) {
 						return obj.apply(this, arguments);
@@ -548,6 +540,8 @@
 			};
 		} else {
 			return {
+				enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+				configrable: false,
 				get: function() {
 					if (checker(arguments.callee.caller, self)) {
 						return obj;
@@ -589,7 +583,7 @@
 	}
 	
 	const ACCESSIBILITY_CHECKER = [
-		canPrivateAccess, canProtectedAccess, function() { return true;}
+		canPrivateAccess, canProtectedAccess, function() { return true; }
 	];
 	
 	/**
