@@ -4,7 +4,7 @@
  *
  * @author   tawaship
  * @email    makazu.mori@gmail.com
- * @version  1.0.0
+ * @version  1.1.0
  * @license  MIT License
  *
  * Copyright (c) 2016 tawaship
@@ -196,6 +196,7 @@
 		defaultMembers.push('_parent');
 		defaultMembers.push('_isDefineMember');
 		defaultMembers.push('_isInheritedOnce');
+		defaultMembers.push('_super');
 		
 		for (var i = 0; i < defaultMembers.length; i++) {
 			obj[defaultMembers[i]] = true;
@@ -205,6 +206,26 @@
 	})();
 	
 	/**
+	 * Class map of relation to LaClassObject
+	 */
+	var basicClassMap = [];
+	
+	/**
+	 * Get LaClass object that is related to user defined class
+	 *
+	 * @param   {function} con   User defined constructor without LaClass
+	 * @return  {function}       Constructor with LaClass
+	 */
+	function getLaClassObjectFromUserClass(con) {
+		var idx;
+		if ((idx = basicClassMap.indexOf(con)) > -1) {
+			return basicClassMap[idx + 1];
+		}
+		
+		return null;
+	}
+	
+	/**
 	 * Inherit prototype
 	 *
 	 * @context {function}          Class constructor
@@ -212,7 +233,7 @@
 	 * @return  {function}          Constructor of sub class
 	 */
 	function _extends(parent) {
-		var p;
+		var p = parent, self = this, type, info;
 		
 		if (this._isInheritedOnce) {
 			throw new LaClassError('Function \'extends\' must be run before create sub class.');
@@ -224,21 +245,34 @@
 		
 		// If super class defined without LaClass, wrap super class.
 		if (!isLaClassObject(parent)) {
-			p = createInheritedClass(Class(), parent);
-			createProperties.call(this, p.prototype, this.prototype, p, ACCESSIBILITY_PUBLIC, false);
-			createProperties.call(this, p,           this,           p, ACCESSIBILITY_PUBLIC, false);
-		} else {
-			// Register reference of static member of super class
-			p = parent;
-			baseProto = Object.getOwnPropertyNames(p);
-			for (var i = 0; i < baseProto.length; i++) {
-				if (baseProto[i] in SKIP_MEMBER_NAME) {
-					continue;
+			if (!(p = getLaClassObjectFromUserClass(parent))) {
+				basicClassMap.push(parent);
+				p = createInheritedClass(Class(), parent);
+				
+				bases = Object.getOwnPropertyNames(parent);
+				for (var i = 0; i < bases.length; i++) {
+					if (bases[i] in SKIP_MEMBER_NAME) {
+						continue;
+					}
+					
+					type = parent[bases[i]] instanceof Function ? VARIABLE_TYPE_FUNCTION : VARIABLE_TYPE_NOT_FUNCTION;
+					Object.defineProperty(p._memberInfo, bases[i], createMemberInformation(ACCESSIBILITY_PUBLIC, type, false));
+					createPropertyReference.call(p, bases[i], p, parent, ACCESSIBILITY_PUBLIC, type);
 				}
 				
-				info = getMemberInfo.call(p, baseProto[i]);console.log(baseProto[i])
-				createPropertyReference.call(this, baseProto[i], p, info.accessibility, info.type);
+				basicClassMap.push(p);
 			}
+		}
+		
+		// Register reference of static member of super class
+		bases = Object.getOwnPropertyNames(p);
+		for (var i = 0; i < bases.length; i++) {
+			if (bases[i] in SKIP_MEMBER_NAME) {
+				continue;
+			}
+			
+			info = getMemberInfo.call(p, bases[i]);
+			createPropertyReference.call(this, bases[i], this, p, info.accessibility, info.type);
 		}
 		
 		Object.defineProperty(p, '_isInheritedOnce', {
@@ -251,6 +285,30 @@
 		});
 		
 		createInheritedClass(this, p);
+		
+		// Create 'super' object
+		Object.defineProperty(this, '_super', {
+			value: (function() {
+				var info, con = Class(function() {
+					parent.apply(this, arguments);
+				});
+				for (i in parent.prototype) {
+					info = getMemberInfo.call(p, i) || createMemberInformation(ACCESSIBILITY_PUBLIC, (parent.prototype[i] instanceof Function ? VARIABLE_TYPE_FUNCTION : VARIABLE_TYPE_NOT_FUNCTION), false).value;
+					createPropertyReference.call(con, i, self, parent.prototype, info.accessibility, info.type);
+				}
+				
+				return con;
+			})()
+		});
+		
+		
+		Object.defineProperty(this.prototype, 'super', {
+			get: function() {
+				return arguments.callee.caller._namespace._super;
+			},
+			set: function(value) {
+			}
+		});
 		
 		return this;
 	}
@@ -282,7 +340,7 @@
 	 * @return  {function}       Class constructor
 	 */
 	function _member(func) {
-		var compObj, baseProto, info;
+		var compObj, bases, info;
 		
 		if (this._isInheritedOnce) {
 			throw new LaClassError('Function \'member\' must be run before create sub class.');
@@ -384,14 +442,14 @@
 	 
 	 */
 	function createProperties(baseObj, targetObj, compObj, accessibility, isFinal) {
-		var baseProto = Object.getOwnPropertyNames(baseObj);
+		var bases = Object.getOwnPropertyNames(baseObj);
 		
-		for (var i = 0; i < baseProto.length; i++) {
-			if (baseProto[i] in SKIP_MEMBER_NAME) {
+		for (var i = 0; i < bases.length; i++) {
+			if (bases[i] in SKIP_MEMBER_NAME) {
 				continue;
 			}
 			
-			createProperty.call(this, baseProto[i], baseObj[baseProto[i]], targetObj, compObj, accessibility, isFinal);
+			createProperty.call(this, bases[i], baseObj[bases[i]], targetObj, compObj, accessibility, isFinal);
 		}
 	}
 	
@@ -427,57 +485,58 @@
 	 *
 	 * @context {function}                Class constructor
 	 * @param   {object}   key            Name of member
-	 * @param   {string}   type           Member type
-	 * @param   {string}   accessibility  Accessibility level
+	 * @param   {object}   targetObj      Target object
 	 * @param   {object}   compObj        Compared object
+	 * @param   {string}   accessibility  Accessibility level
+	 * @param   {string}   type           Member type
 	 */
-	function createPropertyReference(key, compObj, accessibility, type) {
-		var self = this, checker = ACCESSIBILITY_CHECKER[accessibility];
+	function createPropertyReference(key, targetObj, compObj, accessibility, type) {
+		var checker = ACCESSIBILITY_CHECKER[accessibility];
 		
 		Object.defineProperty(this, key, (function() {
 			if (type === VARIABLE_TYPE_FUNCTION) {
 				return {
-					enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+					enumerable: true,
 					configurable: true,
 					value: (function() {
 						var func = function() {
-							if (checker(arguments.callee.caller, self)) {
+							if (checker(arguments.callee.caller, targetObj)) {
 								return compObj[key].apply(compObj, arguments);
 							} else {
 								throw new LaClassError('Function \'' + key + '\' is ' + ACCESSIBILITYS[accessibility] + '.');
 							}
 						};
 						
-						func._namespace = self;
+						func._namespace = targetObj;
 						return func;
 					})()
 				};
 			} else {
 				return {
-					enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+					enumerable: true,
 					configurable: true,
 					get: (function() {
 						var func = function() {
-							if (checker(arguments.callee.caller, self)) {
+							if (checker(arguments.callee.caller, targetObj)) {
 								return compObj[key];
 							} else {
 								throw new LaClassError('Variable \'' + key + '\' is ' + ACCESSIBILITYS[accessibility] + '.');
 							}
 						};
 						
-						func._namespace = self;
+						func._namespace = targetObj;
 						return func;
 					})(),
 					set: (function() {
 						var func = function(value) {
-							if (checker(arguments.callee.caller, self)) {
+							if (checker(arguments.callee.caller, targetObj)) {
 								compObj[key] = value;
 							} else {
 								throw new LaClassError('Variable \'' + key + '\' is ' + ACCESSIBILITYS[accessibility] + '.');
 							}
 						};
 						
-						func._namespace = self;
+						func._namespace = targetObj;
 						return func;
 					})()
 				};
@@ -527,7 +586,7 @@
 			});
 			
 			return {
-				enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+				enumerable: true,
 				configrable: false,
 				writable: false,
 				value: function() {
@@ -540,7 +599,7 @@
 			};
 		} else {
 			return {
-				enumerable: accessibility === ACCESSIBILITY_PUBLIC,
+				enumerable: true,
 				configrable: false,
 				get: function() {
 					if (checker(arguments.callee.caller, self)) {
